@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>SWITCHBENDER :: LIVE VIDEO SWITCHER</title>
+<title>FRAMEBENDER :: LIVE VIDEO BLEND</title>
 <style>
   :root{
     --bg:#08090c;
@@ -11,7 +11,6 @@
     --cyan:#39f2e0;
     --magenta:#ff2ea6;
     --amber:#ffb020;
-    --red:#ff3b3b;
     --text:#d9e2ea;
     --text-dim:#5c6b7a;
   }
@@ -35,11 +34,25 @@
     padding-bottom:14px;
     margin-bottom:18px;
   }
-  h1{ margin:0; font-size:22px; letter-spacing:3px; font-weight:700; }
-  h1 span{ color:var(--magenta); text-shadow:0 0 12px rgba(255,46,166,0.6); }
-  .tag{ font-size:10px; letter-spacing:2px; color:var(--text-dim); }
-  .layout{ display:grid; grid-template-columns:1fr 320px; gap:16px; }
-  @media (max-width:860px){ .layout{ grid-template-columns:1fr; } }
+  h1{
+    margin:0;
+    font-size:22px;
+    letter-spacing:3px;
+    font-weight:700;
+    color:var(--text);
+  }
+  h1 span{ color:var(--cyan); text-shadow:0 0 12px rgba(57,242,224,0.6); }
+  .tag{
+    font-size:10px;
+    letter-spacing:2px;
+    color:var(--text-dim);
+  }
+  .layout{
+    display:grid;
+    grid-template-columns:1fr 300px;
+    gap:16px;
+  }
+  @media (max-width:820px){ .layout{ grid-template-columns:1fr; } }
 
   .stage{
     background:#000;
@@ -49,23 +62,31 @@
     overflow:hidden;
     aspect-ratio:16/9;
     max-width:66%;
-    box-shadow:0 0 0 1px rgba(255,46,166,0.05), 0 0 40px rgba(255,46,166,0.06);
+    box-shadow:0 0 0 1px rgba(57,242,224,0.05), 0 0 40px rgba(57,242,224,0.06);
   }
-  canvas{ width:100%; height:100%; display:block; background:#000; }
+  canvas{
+    width:100%;
+    height:100%;
+    display:block;
+    background:#000;
+  }
   .stage-label{
-    position:absolute; top:8px; left:10px;
-    font-size:10px; letter-spacing:2px; color:var(--magenta);
-    text-shadow:0 0 8px rgba(255,46,166,0.7);
-    opacity:0.9; pointer-events:none;
+    position:absolute;
+    top:8px;
+    left:10px;
+    font-size:10px;
+    letter-spacing:2px;
+    color:var(--cyan);
+    text-shadow:0 0 8px rgba(57,242,224,0.7);
+    opacity:0.85;
+    pointer-events:none;
   }
-  .onair{
-    position:absolute; top:8px; right:10px;
-    font-size:10px; letter-spacing:2px; color:var(--red);
-    text-shadow:0 0 8px rgba(255,59,59,0.8);
-    opacity:0.9; pointer-events:none;
+  .transport{
+    margin-top:12px;
+    display:flex;
+    gap:10px;
+    align-items:center;
   }
-
-  .transport{ margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   button{
     background:var(--panel);
     border:1px solid var(--line);
@@ -78,98 +99,136 @@
     cursor:pointer;
     transition:.15s;
   }
-  button:hover{ border-color:var(--magenta); color:var(--magenta); }
-  button.mode-active{ border-color:var(--cyan); color:var(--cyan); background:rgba(57,242,224,0.1); }
-  button.danger:hover{ border-color:var(--red); color:var(--red); }
+  button:hover{ border-color:var(--cyan); color:var(--cyan); }
+  button.primary{ border-color:var(--cyan); color:var(--cyan); }
+  button.primary:hover{ background:rgba(57,242,224,0.1); }
   button:disabled{ opacity:0.35; cursor:not-allowed; }
 
-  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:16px; }
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:16px;
+  }
   .panel + .panel{ margin-top:14px; }
   .panel h2{
-    margin:0 0 12px; font-size:11px; letter-spacing:2px; color:var(--text-dim);
-    display:flex; align-items:center; gap:8px;
+    margin:0 0 12px;
+    font-size:11px;
+    letter-spacing:2px;
+    color:var(--text-dim);
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
   .panel h2::before{
-    content:""; width:6px;height:6px; background:var(--cyan);
-    box-shadow:0 0 8px var(--cyan); display:inline-block; border-radius:50%;
+    content:"";
+    width:6px;height:6px;
+    background:var(--magenta);
+    box-shadow:0 0 8px var(--magenta);
+    display:inline-block;
+    border-radius:50%;
   }
 
   .loader{
-    border:1px dashed var(--line); border-radius:3px; padding:14px;
-    text-align:center; font-size:10px; letter-spacing:1px; color:var(--text-dim);
-    cursor:pointer; transition:.15s;
-  }
-  .loader:hover{ border-color:var(--magenta); color:var(--magenta); }
-  input[type=file]{ display:none; }
-
-  .cap-note{ font-size:9px; color:var(--text-dim); margin-top:8px; text-align:right; }
-
-  .source-grid{
-    margin-top:12px;
-    display:grid;
-    grid-template-columns:repeat(2, 1fr);
-    gap:8px;
-  }
-  .source-btn{
-    aspect-ratio:16/9;
-    background:#0a0d12 center/cover no-repeat;
-    border:1px solid var(--line);
+    border:1px dashed var(--line);
     border-radius:3px;
-    position:relative;
+    padding:14px;
+    text-align:center;
+    font-size:10px;
+    letter-spacing:1px;
+    color:var(--text-dim);
     cursor:pointer;
-    overflow:hidden;
     transition:.15s;
   }
-  .source-btn:hover{ border-color:var(--cyan); }
-  .source-btn .num{
-    position:absolute; top:3px; left:6px;
-    font-size:16px; font-weight:bold; color:var(--text);
-    text-shadow:0 0 4px #000, 0 0 4px #000;
+  .loader:hover{ border-color:var(--cyan); color:var(--cyan); }
+  input[type=file]{ display:none; }
+
+  .clip-list{
+    margin-top:10px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:160px;
+    overflow-y:auto;
   }
-  .source-btn .name{
-    position:absolute; left:0; right:0; bottom:0;
-    padding:3px 6px;
-    background:rgba(0,0,0,0.65);
-    overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap; font-size:10px; letter-spacing:0.5px;
+  .clip{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:#0a0d12;
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:6px 8px;
+    font-size:10px;
+  }
+  .clip .name{
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
     color:var(--text-dim);
   }
-  .source-btn.live{
-    border-color:var(--red);
-    box-shadow:0 0 10px rgba(255,59,59,0.4);
+  .clip button{
+    padding:4px 8px;
+    font-size:9px;
+    letter-spacing:1px;
   }
-  .source-btn.live .num{ color:var(--red); }
-  .source-btn.loading{ opacity:0.4; cursor:wait; }
+  .clip button.on-src{ border-color:var(--cyan); color:var(--cyan); background:rgba(57,242,224,0.12); }
+  .clip button.on-ov{ border-color:var(--magenta); color:var(--magenta); background:rgba(255,46,166,0.12); }
 
-  .slider-row{ margin-top:14px; }
+  .slider-row{ margin-bottom:14px; }
+  .slider-row:last-child{ margin-bottom:0; }
   .slider-row label{
-    display:flex; justify-content:space-between; font-size:10px;
-    letter-spacing:1px; color:var(--text-dim); margin-bottom:6px;
+    display:flex;
+    justify-content:space-between;
+    font-size:10px;
+    letter-spacing:1px;
+    color:var(--text-dim);
+    margin-bottom:6px;
   }
   .slider-row label b{ color:var(--text); font-weight:normal; }
   input[type=range]{
-    -webkit-appearance:none; width:100%; height:3px;
-    background:var(--line); border-radius:2px; outline:none;
+    -webkit-appearance:none;
+    width:100%;
+    height:3px;
+    background:var(--line);
+    border-radius:2px;
+    outline:none;
   }
   input[type=range]::-webkit-slider-thumb{
-    -webkit-appearance:none; width:13px;height:13px; border-radius:50%;
-    background:var(--cyan); box-shadow:0 0 8px rgba(57,242,224,0.8);
-    cursor:pointer; margin-top:-5px;
+    -webkit-appearance:none;
+    width:13px;height:13px;
+    border-radius:50%;
+    background:var(--cyan);
+    box-shadow:0 0 8px rgba(57,242,224,0.8);
+    cursor:pointer;
+    margin-top:-5px;
   }
-  input[type=range]:disabled::-webkit-slider-thumb{ background:var(--text-dim); box-shadow:none; }
+  #blend::-webkit-slider-thumb{ background:var(--magenta); box-shadow:0 0 8px rgba(255,46,166,0.8); }
 
   .hint{
-    font-size:10px; color:var(--text-dim); line-height:1.6; margin-top:10px;
-    border-top:1px dashed var(--line); padding-top:10px;
+    font-size:10px;
+    color:var(--text-dim);
+    line-height:1.6;
+    margin-top:10px;
+    border-top:1px dashed var(--line);
+    padding-top:10px;
   }
+  .toggle-row{
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+  }
+  .toggle-row button{ flex:1; }
+  .toggle-row button.active{ border-color:var(--amber); color:var(--amber); background:rgba(255,176,32,0.1); }
 </style>
 </head>
 <body>
 
 <header>
   <div>
-    <h1>SWITCH<span>BENDER</span></h1>
-    <div class="tag">LIVE VIDEO SWITCHER MODULE</div>
+    <h1>FRAME<span>BENDER</span></h1>
+    <div class="tag">LIVE VIDEO BLEND MODULE</div>
   </div>
   <div class="tag" id="statusTag">STATUS :: 待機中</div>
 </header>
@@ -178,56 +237,83 @@
   <div>
     <div class="stage">
       <canvas id="stageCanvas" width="1280" height="720"></canvas>
-      <div class="stage-label">PROGRAM</div>
-      <div class="onair" id="onairTag"></div>
+      <div class="stage-label">MAIN OUT</div>
     </div>
     <div class="transport">
-      <button class="mode-active" id="cutModeBtn">CUT</button>
-      <button id="xfadeModeBtn">X-FADE</button>
-      <button class="danger" id="blackBtn">■ TO BLACK</button>
+      <button class="primary" id="playBtn" disabled>▶ PLAY</button>
+      <button id="stopBtn" disabled>■ STOP</button>
       <button id="extBtn">🖥 EXTERNAL: OFF</button>
     </div>
-    <div class="slider-row" style="max-width:320px;">
-      <label>TRANSITION TIME <b id="xfadeVal">0.8s</b></label>
-      <input type="range" id="xfadeTime" min="1" max="40" value="8" disabled>
-    </div>
     <div class="hint">
-      右のSOURCEボタンを押すと即座にPROGRAMが切り替わります。CUTは瞬時切替、X-FADEは指定した時間でクロスフェードします。読み込んだ動画はすべて先読み済みなので、切替に待ちは発生しません。<br><br>
-      「EXTERNAL」をONにすると、PROGRAM映像のみを映した別ウィンドウが開きます。そのウィンドウを外部ディスプレイ(HDMI出力側)にドラッグして、ブラウザのフルスクリーン機能(F11など)を使うと、コントロール類が映らないクリーンな出力画面として使えます。
+      動画を読み込んで、リストの「SRC」ボタンでベース映像、「OVL」ボタンで重ねる映像を選びます。BLENDスライダーを動かすと、その場でオーバーラップの濃さがリアルタイムに変わります。<br><br>
+      「EXTERNAL」をONにすると、MAIN OUTのみを映した別ウィンドウが開きます。そのウィンドウを外部ディスプレイ(HDMI出力側)にドラッグして、ブラウザのフルスクリーン機能(F11など)を使うと、コントロール類が映らないクリーンな出力画面として使えます。
     </div>
   </div>
 
   <div>
     <div class="panel">
       <h2>SOURCE LOADER</h2>
-      <label class="loader" id="loaderBtn">+ mp4を読み込む(複数選択可)</label>
+      <label class="loader" id="loaderBtn">
+        + mp4を読み込む(複数選択可)
+      </label>
       <input type="file" id="fileInput" accept="video/mp4,video/*" multiple>
-      <div class="source-grid" id="sourceGrid"></div>
-      <div class="cap-note" id="capNote">0 / 12 LOADED</div>
+      <div class="clip-list" id="clipList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>BLEND</h2>
+      <div class="slider-row">
+        <label>OVERLAP RATIO <b id="blendVal">50%</b></label>
+        <input type="range" id="blend" min="0" max="100" value="50">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>EFFECT RACK</h2>
+      <div class="slider-row">
+        <label>HUE SHIFT <b id="hueVal">0°</b></label>
+        <input type="range" id="hue" min="0" max="360" value="0">
+      </div>
+      <div class="slider-row">
+        <label>BLUR <b id="blurVal">0px</b></label>
+        <input type="range" id="blur" min="0" max="20" value="0">
+      </div>
+      <div class="slider-row">
+        <label>MOTION BLUR <b id="motionVal">0%</b></label>
+        <input type="range" id="motion" min="0" max="100" value="0">
+      </div>
+      <div class="toggle-row">
+        <button id="grayBtn">GRAYSCALE</button>
+        <button id="invertBtn">INVERT</button>
+        <button id="solarizeBtn">SOLARIZE</button>
+      </div>
     </div>
   </div>
 </div>
 
+<svg width="0" height="0" style="position:absolute">
+  <filter id="solarizeFilter" color-interpolation-filters="sRGB">
+    <feComponentTransfer>
+      <feFuncR type="table" tableValues="0 1 0"></feFuncR>
+      <feFuncG type="table" tableValues="0 1 0"></feFuncG>
+      <feFuncB type="table" tableValues="0 1 0"></feFuncB>
+    </feComponentTransfer>
+  </filter>
+</svg>
+
 <script>
-const MAX_SOURCES = 12;
-const sourceGrid = document.getElementById('sourceGrid');
+const clipList = document.getElementById('clipList');
 const canvas = document.getElementById('stageCanvas');
 const ctx = canvas.getContext('2d');
 const statusTag = document.getElementById('statusTag');
-const onairTag = document.getElementById('onairTag');
-const capNote = document.getElementById('capNote');
 
-let clips = []; // {name, url, video, ready}
-let activeIndex = -1;   // 現在PROGRAMに出ているソース
-let mode = 'cut';       // 'cut' | 'xfade'
-
-// トランジション状態
-let transitioning = false;
-let fromIndex = -1;
-let toIndex = -1;
-let transStart = 0;
-let transDuration = 800; // ms
-
+let clips = []; // {name, url, video}
+let srcIndex = -1;
+let ovIndex = -1;
+let playing = false;
+let gray = false;
+let invert = false;
+let solarize = false;
 let extWin = null;
 let extCtx = null;
 
@@ -238,100 +324,101 @@ document.getElementById('loaderBtn').addEventListener('click', () => {
 document.getElementById('fileInput').addEventListener('change', (e) => {
   const files = Array.from(e.target.files);
   files.forEach(f => {
-    if (clips.length >= MAX_SOURCES) return;
     const url = URL.createObjectURL(f);
     const v = document.createElement('video');
     v.src = url;
-    v.preload = 'auto';
+    v.preload = 'auto';   // 追加した瞬間から先読みを開始
     v.playsInline = true;
-    v.muted = false;
-    v.loop = true;
-    const clip = { name: f.name, url, video: v, ready: false, thumb: null };
-    v.addEventListener('loadeddata', () => {
-      clip.ready = true;
-      renderSourceGrid();
-      // 内蔵GPUでも負荷が軽いよう、少し先のフレームへ一度だけシークしてサムネイルを作る
-      try { v.currentTime = Math.min(0.5, (v.duration || 1) / 4); }
-      catch(err){ captureThumb(clip); }
-    });
-    v.addEventListener('seeked', () => {
-      if (!clip.thumb){
-        captureThumb(clip);
-        v.currentTime = 0; // 再生開始位置に戻す
-      }
-    });
+    v.muted = true;       // 先読み中は自動再生ポリシー対策でミュート
+    v.loop = false;
     v.load();
-    clips.push(clip);
+    clips.push({ name: f.name, url, video: v });
   });
-  renderSourceGrid();
+  renderClipList();
   e.target.value = '';
 });
 
-function captureThumb(clip){
-  const v = clip.video;
-  const vw = v.videoWidth, vh = v.videoHeight;
-  if (!vw || !vh) return;
-  const tc = document.createElement('canvas');
-  tc.width = 160; tc.height = 90; // 軽量な低解像度サムネイル
-  const tctx = tc.getContext('2d');
-  const scale = Math.max(tc.width / vw, tc.height / vh);
-  const dw = vw * scale, dh = vh * scale;
-  const dx = (tc.width - dw) / 2, dy = (tc.height - dh) / 2;
-  tctx.drawImage(v, dx, dy, dw, dh);
-  clip.thumb = tc.toDataURL('image/jpeg', 0.6);
-  renderSourceGrid();
-}
-
-function renderSourceGrid(){
-  sourceGrid.innerHTML = '';
+function renderClipList(){
+  clipList.innerHTML = '';
   clips.forEach((c, i) => {
-    const btn = document.createElement('div');
-    btn.className = 'source-btn';
-    if (i === activeIndex) btn.classList.add('live');
-    if (!c.ready) btn.classList.add('loading');
-    if (c.thumb) btn.style.backgroundImage = `url(${c.thumb})`;
-    btn.innerHTML = `<div class="num">${i+1}</div><div class="name">${c.name}</div>`;
-    btn.onclick = () => { if (c.ready) switchTo(i); };
-    sourceGrid.appendChild(btn);
+    const row = document.createElement('div');
+    row.className = 'clip';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = c.name;
+    const srcBtn = document.createElement('button');
+    srcBtn.textContent = 'SRC';
+    if (i === srcIndex) srcBtn.classList.add('on-src');
+    srcBtn.onclick = () => setSource(i);
+    const ovBtn = document.createElement('button');
+    ovBtn.textContent = 'OVL';
+    if (i === ovIndex) ovBtn.classList.add('on-ov');
+    ovBtn.onclick = () => setOverlay(i);
+    row.appendChild(name);
+    row.appendChild(srcBtn);
+    row.appendChild(ovBtn);
+    clipList.appendChild(row);
   });
-  capNote.textContent = `${clips.length} / ${MAX_SOURCES} LOADED`;
+  document.getElementById('playBtn').disabled = !(srcIndex >= 0);
 }
 
-document.getElementById('cutModeBtn').addEventListener('click', (e) => {
-  mode = 'cut';
-  e.target.classList.add('mode-active');
-  document.getElementById('xfadeModeBtn').classList.remove('mode-active');
-  document.getElementById('xfadeTime').disabled = true;
-});
-document.getElementById('xfadeModeBtn').addEventListener('click', (e) => {
-  mode = 'xfade';
-  e.target.classList.add('mode-active');
-  document.getElementById('cutModeBtn').classList.remove('mode-active');
-  document.getElementById('xfadeTime').disabled = false;
-});
-document.getElementById('xfadeTime').addEventListener('input', (e) => {
-  transDuration = e.target.value * 100;
-  document.getElementById('xfadeVal').textContent = (transDuration / 1000).toFixed(1) + 's';
-});
+function setSource(i){
+  // 直前のSRCを止める(OVLと同じクリップでなければ)
+  if (srcIndex >= 0 && srcIndex !== ovIndex){
+    clips[srcIndex].video.pause();
+  }
+  srcIndex = i;
+  const v = clips[i].video;
+  v.loop = false;   // SRCはワンショット
+  v.muted = false;  // SRCは音を出す
+  v.currentTime = 0;
+  v.onended = () => {
+    playing = false;
+    if (ovIndex >= 0) clips[ovIndex].video.pause();
+    statusTag.textContent = 'STATUS :: SRC再生終了';
+  };
+  if (playing) v.play();
+  renderClipList();
+  statusTag.textContent = 'STATUS :: SOURCE READY';
+}
+function setOverlay(i){
+  // 直前のOVLを止める(SRCと同じクリップでなければ)
+  if (ovIndex >= 0 && ovIndex !== srcIndex){
+    clips[ovIndex].video.pause();
+  }
+  ovIndex = i;
+  const v = clips[i].video;
+  v.loop = true;   // OVLは常にループ
+  v.muted = true;  // OVLの音は重複させない
+  if (playing){
+    v.currentTime = 0;
+    v.play(); // 既に読み込み済みなので即座に再生できる
+  }
+  renderClipList();
+}
 
-document.getElementById('blackBtn').addEventListener('click', () => {
-  if (activeIndex >= 0) clips[activeIndex].video.pause();
-  if (transitioning && toIndex >= 0) clips[toIndex].video.pause();
-  activeIndex = -1;
-  transitioning = false;
-  fromIndex = -1; toIndex = -1;
-  statusTag.textContent = 'STATUS :: TO BLACK';
-  onairTag.textContent = '';
-  renderSourceGrid();
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (srcIndex < 0) return;
+  playing = true;
+  clips[srcIndex].video.play();
+  if (ovIndex >= 0) clips[ovIndex].video.play();
+  statusTag.textContent = 'STATUS :: LIVE中';
+  document.getElementById('stopBtn').disabled = false;
+});
+document.getElementById('stopBtn').addEventListener('click', () => {
+  playing = false;
+  if (srcIndex >= 0) clips[srcIndex].video.pause();
+  if (ovIndex >= 0) clips[ovIndex].video.pause();
+  statusTag.textContent = 'STATUS :: 停止';
 });
 
 function openExternal(){
-  extWin = window.open('', 'switchbender_external', 'width=960,height=540');
+  extWin = window.open('', 'framebender_external', 'width=960,height=540');
   if (!extWin){
     alert('ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください。');
     return;
   }
-  extWin.document.title = 'SWITCHBENDER :: EXTERNAL OUT';
+  extWin.document.title = 'FRAMEBENDER :: EXTERNAL OUT';
   extWin.document.body.style.margin = '0';
   extWin.document.body.style.background = '#000';
   extWin.document.body.style.overflow = 'hidden';
@@ -362,40 +449,40 @@ function closeExternal(){
 function setExtBtn(on){
   const b = document.getElementById('extBtn');
   b.textContent = '🖥 EXTERNAL: ' + (on ? 'ON' : 'OFF');
-  b.classList.toggle('mode-active', on);
+  b.classList.toggle('active', on);
 }
 document.getElementById('extBtn').addEventListener('click', () => {
   if (extWin && !extWin.closed) closeExternal();
   else openExternal();
 });
+document.getElementById('grayBtn').addEventListener('click', (e) => {
+  gray = !gray;
+  e.target.classList.toggle('active', gray);
+});
+document.getElementById('invertBtn').addEventListener('click', (e) => {
+  invert = !invert;
+  e.target.classList.toggle('active', invert);
+});
+document.getElementById('solarizeBtn').addEventListener('click', (e) => {
+  solarize = !solarize;
+  e.target.classList.toggle('active', solarize);
+});
 
-function switchTo(i){
-  if (i === activeIndex && !transitioning) return;
+const blend = document.getElementById('blend');
+const hue = document.getElementById('hue');
+const blur = document.getElementById('blur');
+const motion = document.getElementById('motion');
+blend.addEventListener('input', () => document.getElementById('blendVal').textContent = blend.value + '%');
+hue.addEventListener('input', () => document.getElementById('hueVal').textContent = hue.value + '°');
+blur.addEventListener('input', () => document.getElementById('blurVal').textContent = blur.value + 'px');
+motion.addEventListener('input', () => document.getElementById('motionVal').textContent = motion.value + '%');
 
-  if (mode === 'cut' || activeIndex < 0){
-    // 瞬時切替:前のソースを止めて新しいソースを先頭から再生
-    if (activeIndex >= 0) clips[activeIndex].video.pause();
-    if (transitioning && toIndex >= 0 && toIndex !== i) clips[toIndex].video.pause();
-    transitioning = false;
-    const v = clips[i].video;
-    v.currentTime = 0;
-    v.play();
-    activeIndex = i;
-    statusTag.textContent = 'STATUS :: CUT';
-  } else {
-    // クロスフェード:今のソースを流したまま新しいソースを再生開始
-    fromIndex = activeIndex;
-    toIndex = i;
-    const v = clips[i].video;
-    v.currentTime = 0;
-    v.play();
-    transitioning = true;
-    transStart = performance.now();
-    activeIndex = i;
-    statusTag.textContent = 'STATUS :: X-FADE中';
-  }
-  onairTag.textContent = 'ON AIR :: ' + clips[i].name;
-  renderSourceGrid();
+function buildFilter(){
+  let f = `hue-rotate(${hue.value}deg) blur(${blur.value}px)`;
+  if (gray) f += ' grayscale(100%)';
+  if (invert) f += ' invert(100%)';
+  if (solarize) f += ' url(#solarizeFilter)';
+  return f;
 }
 
 let mainLastDraw = 0;
@@ -403,49 +490,43 @@ const MAIN_FRAME_INTERVAL = 66; // 操作画面はGPU負荷軽減のため約15f
 
 function drawFrame(){
   requestAnimationFrame(drawFrame);
-  const w = canvas.width, h = canvas.height;
-
-  // トランジションの終了判定は毎回正確に行う(表示を間引いても時間はズレない)
-  if (transitioning){
-    const t = Math.min(1, (performance.now() - transStart) / transDuration);
-    if (t >= 1){
-      if (fromIndex >= 0) clips[fromIndex].video.pause();
-      transitioning = false;
-      statusTag.textContent = 'STATUS :: ON AIR';
-      fromIndex = -1;
-    }
-  }
-
-  // 操作画面への実際の描画だけを間引く
   const now = performance.now();
   if (now - mainLastDraw < MAIN_FRAME_INTERVAL) return;
   mainLastDraw = now;
-  renderComposite(ctx, w, h);
+  renderComposite(ctx, canvas.width, canvas.height);
 }
 
-// PROGRAM映像の合成描画(メイン/EXTERNAL共通)。動画ソースから直接描画する。
+// PROGRAM映像の合成描画(メイン/EXTERNAL共通)。呼ばれるたびに、そのキャンバス自身の
+// 前フレームに対してMOTION BLURのブレンドがかかる(キャンバスごとに独立して残像が乗る)。
 function renderComposite(targetCtx, w, h){
-  targetCtx.fillStyle = '#000';
+  targetCtx.filter = 'none';
+  // MOTION BLURが0なら完全に黒でクリア、値が大きいほど前フレームを薄く残して残像を作る
+  const clearAlpha = 1 - (motion.value / 100) * 0.9;
+  targetCtx.fillStyle = `rgba(0,0,0,${clearAlpha})`;
   targetCtx.fillRect(0,0,w,h);
 
-  if (transitioning){
-    const t = Math.min(1, (performance.now() - transStart) / transDuration);
-    if (fromIndex >= 0 && clips[fromIndex] && clips[fromIndex].video.readyState >= 2){
-      targetCtx.globalAlpha = 1 - t;
-      drawCoverInto(targetCtx, clips[fromIndex].video, w, h);
+  targetCtx.filter = buildFilter();
+
+  if (srcIndex >= 0){
+    const v = clips[srcIndex].video;
+    if (v.readyState >= 2){
+      targetCtx.globalAlpha = 1;
+      drawCoverInto(targetCtx, v, w, h);
     }
-    if (toIndex >= 0 && clips[toIndex] && clips[toIndex].video.readyState >= 2){
-      targetCtx.globalAlpha = t;
-      drawCoverInto(targetCtx, clips[toIndex].video, w, h);
+  }
+  if (ovIndex >= 0){
+    const v = clips[ovIndex].video;
+    if (v.readyState >= 2){
+      targetCtx.globalAlpha = blend.value / 100;
+      drawCoverInto(targetCtx, v, w, h);
+      targetCtx.globalAlpha = 1;
     }
-    targetCtx.globalAlpha = 1;
-  } else if (activeIndex >= 0 && clips[activeIndex] && clips[activeIndex].video.readyState >= 2){
-    targetCtx.globalAlpha = 1;
-    drawCoverInto(targetCtx, clips[activeIndex].video, w, h);
   }
 }
 
 // 別ウィンドウ(HDMI出力用)専用の独立した描画ループ。フルフレームレートで描画する。
+// メインのキャンバスをコピーするのではなく、動画ソースから直接描画するため
+// メイン側の再生を待たせることがない。
 function drawExternalFrame(){
   if (!(extWin && !extWin.closed && extWin.requestAnimationFrame)) return; // 閉じたらループ終了
   extWin.requestAnimationFrame(drawExternalFrame);
