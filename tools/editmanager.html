@@ -1119,7 +1119,10 @@ async function exportMp4(){
       exportStatus.textContent = 'MP4に変換中...(初回はライブラリ読み込みで数十秒かかります)';
       await loadFfmpegIfNeeded();
       const { createFFmpeg, fetchFile } = FFmpeg;
-      const ffmpeg = createFFmpeg({ log:false });
+      const ffmpeg = createFFmpeg({
+        log:false,
+        corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' // SharedArrayBuffer不要なシングルスレッド版を明示指定
+      });
       await ffmpeg.load();
       ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
       await ffmpeg.run('-i','input.webm','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','output.mp4');
