@@ -1059,6 +1059,21 @@ async function loadFfmpegIfNeeded(){
   throw new Error('ffmpeg.wasmの読み込みに失敗しました(ネット接続、または広告ブロッカー等の拡張機能を確認してください): ' + (lastErr ? lastErr.message : ''));
 }
 
+let sharedAudioCtx = null;
+let sharedAudioDest = null;
+function getAudioDestStream(){
+  // createMediaElementSourceは同じaudio要素に対して一度しか呼べないため、使い回す
+  if (!sharedAudioCtx){
+    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const srcNode = sharedAudioCtx.createMediaElementSource(audio);
+    sharedAudioDest = sharedAudioCtx.createMediaStreamDestination();
+    srcNode.connect(sharedAudioDest);
+    srcNode.connect(sharedAudioCtx.destination);
+  }
+  if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
+  return sharedAudioDest.stream;
+}
+
 async function exportMp4(){
   const total = Math.max(trackTotalFrames('A'), trackTotalFrames('B'), 1);
   if (total <= 1){ alert('タイムラインに何も配置されていません'); return; }
@@ -1066,69 +1081,69 @@ async function exportMp4(){
   const btn = document.getElementById('exportMp4Btn');
   btn.disabled = true;
 
-  exportStatus.textContent = '準備中...';
-
-  const canvasStream = canvas.captureStream(fps);
-  let mixedStream = canvasStream;
-  let audioCtx = null;
-
-  if (audioLoaded){
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const srcNode = audioCtx.createMediaElementSource(audio);
-    const destNode = audioCtx.createMediaStreamDestination();
-    srcNode.connect(destNode);
-    srcNode.connect(audioCtx.destination);
-    mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...destNode.stream.getAudioTracks()]);
-  }
-
-  let mimeType = 'video/webm;codecs=vp9,opus';
-  if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
-  const recorder = new MediaRecorder(mixedStream, { mimeType, videoBitsPerSecond: 8000000 });
-  const chunks = [];
-  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-  const recordingDone = new Promise((resolve) => { recorder.onstop = resolve; });
-
-  seekToFrame(0);
-  recorder.start();
-  doPlay();
-  exportingState = { active:true, onEnd: () => recorder.stop() };
-
-  const progressTimer = setInterval(() => {
-    const pct = Math.min(100, Math.round((currentFrame / total) * 100));
-    exportStatus.textContent = `録画中... ${pct}%`;
-  }, 200);
-
-  await recordingDone;
-  clearInterval(progressTimer);
-  exportingState = null;
-  if (audioCtx) audioCtx.close();
-
-  const webmBlob = new Blob(chunks, { type: 'video/webm' });
-
   try {
-    exportStatus.textContent = 'MP4に変換中...(初回はライブラリ読み込みで数十秒かかります)';
-    await loadFfmpegIfNeeded();
-    const { createFFmpeg, fetchFile } = FFmpeg;
-    const ffmpeg = createFFmpeg({ log:false });
-    await ffmpeg.load();
-    ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
-    await ffmpeg.run('-i','input.webm','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','output.mp4');
-    const data = ffmpeg.FS('readFile', 'output.mp4');
-    const mp4Blob = new Blob([data.buffer], { type:'video/mp4' });
-    const url = URL.createObjectURL(mp4Blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'editmanager-output.mp4';
-    a.click();
-    URL.revokeObjectURL(url);
-    exportStatus.textContent = '書き出し完了!(mp4)';
-  } catch(err){
-    console.error(err);
-    exportStatus.textContent = 'MP4変換に失敗しました(' + (err && err.message ? err.message : err) + ')。webm形式でダウンロードします。';
-    const url = URL.createObjectURL(webmBlob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'editmanager-output.webm';
-    a.click();
-    URL.revokeObjectURL(url);
+    exportStatus.textContent = '準備中...';
+
+    const canvasStream = canvas.captureStream(fps);
+    let mixedStream = canvasStream;
+
+    if (audioLoaded){
+      const audioStream = getAudioDestStream();
+      mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
+    }
+
+    let mimeType = 'video/webm;codecs=vp9,opus';
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
+    const recorder = new MediaRecorder(mixedStream, { mimeType, videoBitsPerSecond: 8000000 });
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    const recordingDone = new Promise((resolve) => { recorder.onstop = resolve; });
+
+    seekToFrame(0);
+    recorder.start();
+    doPlay();
+    exportingState = { active:true, onEnd: () => recorder.stop() };
+
+    const progressTimer = setInterval(() => {
+      const pct = Math.min(100, Math.round((currentFrame / total) * 100));
+      exportStatus.textContent = `録画中... ${pct}%`;
+    }, 200);
+
+    await recordingDone;
+    clearInterval(progressTimer);
+    exportingState = null;
+
+    const webmBlob = new Blob(chunks, { type: 'video/webm' });
+
+    try {
+      exportStatus.textContent = 'MP4に変換中...(初回はライブラリ読み込みで数十秒かかります)';
+      await loadFfmpegIfNeeded();
+      const { createFFmpeg, fetchFile } = FFmpeg;
+      const ffmpeg = createFFmpeg({ log:false });
+      await ffmpeg.load();
+      ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
+      await ffmpeg.run('-i','input.webm','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','output.mp4');
+      const data = ffmpeg.FS('readFile', 'output.mp4');
+      const mp4Blob = new Blob([data.buffer], { type:'video/mp4' });
+      const url = URL.createObjectURL(mp4Blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'editmanager-output.mp4';
+      a.click();
+      URL.revokeObjectURL(url);
+      exportStatus.textContent = '書き出し完了!(mp4)';
+    } catch(err){
+      console.error(err);
+      exportStatus.textContent = 'MP4変換に失敗しました(' + (err && err.message ? err.message : err) + ')。webm形式でダウンロードします。';
+      const url = URL.createObjectURL(webmBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'editmanager-output.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  } catch(outerErr){
+    console.error(outerErr);
+    exportStatus.textContent = '書き出し処理でエラーが発生しました(' + (outerErr && outerErr.message ? outerErr.message : outerErr) + ')';
+    exportingState = null;
   } finally {
     btn.disabled = false;
   }
