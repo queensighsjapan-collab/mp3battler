@@ -208,9 +208,46 @@
     font-size:10px; color:var(--text-dim); line-height:1.7; margin-top:14px;
     border-top:1px dashed var(--line); padding-top:10px; max-width:820px;
   }
+  .activation-overlay{
+    position:fixed; inset:0; z-index:1000; background:rgba(10,7,14,0.92);
+    backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center;
+  }
+  .activation-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:36px 32px; width:90%; max-width:320px; text-align:center;
+    box-shadow:0 10px 50px rgba(0,0,0,0.5);
+  }
+  .activation-card h2{ margin:0 0 4px; font-size:20px; font-weight:800; }
+  .activation-card h2 span{ color:var(--pink); }
+  .activation-tag{ font-size:9px; letter-spacing:2px; color:var(--text-dim); margin-bottom:16px; }
+  .activation-card p{ font-size:11px; color:var(--text-dim); margin:0 0 16px; }
+  .activation-card input{
+    width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    font-family:inherit; font-size:13px; padding:10px 12px; border-radius:20px;
+    text-align:center; letter-spacing:2px; margin-bottom:12px;
+  }
+  .activation-card input:focus{ outline:none; border-color:var(--pink); }
+  .activation-card button{
+    width:100%; background:var(--pink-soft); border:1px solid var(--pink); color:var(--pink);
+    padding:10px; font-family:inherit; font-size:12px; letter-spacing:2px;
+    border-radius:20px; cursor:pointer; transition:.15s;
+  }
+  .activation-card button:hover{ background:rgba(255,143,196,0.3); }
+  .activation-error{ font-size:10px; color:#ff6b6b; margin-top:10px; min-height:14px; }
 </style>
 </head>
 <body>
+
+<div id="activationOverlay" class="activation-overlay">
+  <div class="activation-card">
+    <h2>EDIT <span>Manager</span></h2>
+    <div class="activation-tag">ACTIVATION REQUIRED</div>
+    <p>利用にはアクティベーションキーが必要です</p>
+    <input type="password" id="activationInput" placeholder="キーを入力" autocomplete="off">
+    <button id="activationBtn">起動する</button>
+    <div class="activation-error" id="activationError"></div>
+  </div>
+</div>
 
 <header>
   <div class="brand">
@@ -293,6 +330,37 @@
 </div>
 
 <script>
+// ---------- アクティベーション ----------
+// ここを自分だけが知っているキーに書き換えてください
+const ACTIVATION_KEY = 'CHANGE_ME_1234';
+const ACTIVATION_STORAGE_KEY = 'editmanager_activated';
+
+(function checkActivation(){
+  const overlay = document.getElementById('activationOverlay');
+  const input = document.getElementById('activationInput');
+  const btn = document.getElementById('activationBtn');
+  const errorEl = document.getElementById('activationError');
+
+  if (localStorage.getItem(ACTIVATION_STORAGE_KEY) === 'true'){
+    overlay.style.display = 'none';
+    return;
+  }
+
+  function tryActivate(){
+    if (input.value === ACTIVATION_KEY){
+      localStorage.setItem(ACTIVATION_STORAGE_KEY, 'true');
+      overlay.style.display = 'none';
+    } else {
+      errorEl.textContent = 'キーが違います';
+      input.value = '';
+      input.focus();
+    }
+  }
+  btn.addEventListener('click', tryActivate);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryActivate(); });
+  input.focus();
+})();
+
 const canvas = document.getElementById('stageCanvas');
 const ctx = canvas.getContext('2d');
 const statusTag = document.getElementById('statusTag');
@@ -389,25 +457,28 @@ setupTrackLoader('A', 'fileInputA', 'loaderA');
 setupTrackLoader('B', 'fileInputB', 'loaderB');
 
 // ---------- タイムライン計算(追加区間方式) ----------
-function buildSegments(trackKey){
+// クリップの表示区間を「重なりあり」で計算する。
+// トランジションは追加区間ではなく、前クリップの終わりと次クリップの始まりを重ねる形にする。
+// これにより、前のズームは止まらず、次のズームも重なっている間からすでに始まる。
+function computeClipWindows(trackKey){
   const clips = tracks[trackKey].clips;
-  const segs = [];
+  const windows = [];
   clips.forEach((clip, i) => {
-    if (i > 0){
-      segs.push({
-        type:'transition',
-        duration: clip.transitionIn.type === 'cut' ? 0 : clip.transitionIn.frames,
-        from: clips[i-1],
-        to: clip,
-        transition: clip.transitionIn
-      });
+    let start;
+    if (i === 0){
+      start = 0;
+    } else {
+      const overlap = clip.transitionIn.type === 'cut' ? 0 : clip.transitionIn.frames;
+      start = windows[i-1].end - overlap;
     }
-    segs.push({ type:'clip', duration: clip.durationFrames, clip });
+    const end = start + clip.durationFrames;
+    windows.push({ clip, start, end, transitionIn: clip.transitionIn });
   });
-  return segs;
+  return windows;
 }
 function trackTotalFrames(trackKey){
-  return buildSegments(trackKey).reduce((s, seg) => s + seg.duration, 0);
+  const w = computeClipWindows(trackKey);
+  return w.length ? w[w.length - 1].end : 0;
 }
 
 // ---------- タイムラインUI(EDIUS風ブロック) ----------
@@ -417,60 +488,62 @@ function renderTimelineTrack(trackKey){
   const snapLine = document.createElement('div');
   snapLine.className = 'snap-line';
   body.appendChild(snapLine);
-  const segs = buildSegments(trackKey);
-  let x = 0;
-  segs.forEach(seg => {
-    if (seg.type === 'clip'){
-      const w = seg.duration * pxPerFrame;
-      const el = document.createElement('div');
-      el.className = 'clip-block track' + trackKey;
-      el.style.left = x + 'px';
-      el.style.width = Math.max(w, 6) + 'px';
-      el.style.backgroundImage = `url(${seg.clip.url})`;
-      if (selected && selected.type === 'clip' && selected.clip === seg.clip) el.classList.add('selected');
-      if (dragging && dragging.clip === seg.clip) el.classList.add('dragging');
-      const label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = `${seg.clip.name} (${seg.clip.durationFrames}F)`;
-      el.appendChild(label);
-      const handle = document.createElement('div');
-      handle.className = 'resize-handle';
-      handle.addEventListener('mousedown', (ev) => {
-        ev.stopPropagation();
-        startResize(ev, trackKey, seg.clip);
-      });
-      el.appendChild(handle);
-      el.addEventListener('mousedown', (ev) => startDrag(ev, trackKey, seg.clip, el));
-      el.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        if (dragMoved){ dragMoved = false; return; }
-        selectClip(trackKey, seg.clip);
-      });
-      body.appendChild(el);
-      x += w;
-    } else {
-      if (seg.transition.type === 'cut'){
-        const el = document.createElement('div');
-        el.className = 'cut-marker';
-        el.style.left = x + 'px';
-        if (selected && selected.type === 'transition' && selected.clip === seg.to) el.classList.add('selected');
-        el.addEventListener('click', (ev) => { ev.stopPropagation(); selectTransition(trackKey, seg.to); });
-        body.appendChild(el);
+  const windows = computeClipWindows(trackKey);
+
+  windows.forEach((w, i) => {
+    const el = document.createElement('div');
+    el.className = 'clip-block track' + trackKey;
+    el.style.left = (w.start * pxPerFrame) + 'px';
+    el.style.width = Math.max((w.end - w.start) * pxPerFrame, 6) + 'px';
+    el.style.backgroundImage = `url(${w.clip.url})`;
+    if (selected && selected.type === 'clip' && selected.clip === w.clip) el.classList.add('selected');
+    if (dragging && dragging.clip === w.clip) el.classList.add('dragging');
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `${w.clip.name} (${w.clip.durationFrames}F)`;
+    el.appendChild(label);
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    handle.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      startResize(ev, trackKey, w.clip);
+    });
+    el.appendChild(handle);
+    el.addEventListener('mousedown', (ev) => startDrag(ev, trackKey, w.clip, el));
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (dragMoved){ dragMoved = false; return; }
+      selectClip(trackKey, w.clip);
+    });
+    body.appendChild(el);
+
+    if (i > 0){
+      const prevW = windows[i-1];
+      if (w.transitionIn.type === 'cut'){
+        const marker = document.createElement('div');
+        marker.className = 'cut-marker';
+        marker.style.left = (w.start * pxPerFrame) + 'px';
+        if (selected && selected.type === 'transition' && selected.clip === w.clip) marker.classList.add('selected');
+        marker.addEventListener('click', (ev) => { ev.stopPropagation(); selectTransition(trackKey, w.clip); });
+        body.appendChild(marker);
       } else {
-        const w = seg.duration * pxPerFrame;
-        const el = document.createElement('div');
-        el.className = 'trans-block';
-        el.style.left = x + 'px';
-        el.style.width = Math.max(w, 10) + 'px';
-        el.textContent = seg.transition.type === 'push' ? ('PUSH ' + seg.transition.direction[0].toUpperCase()) : 'DIS';
-        if (selected && selected.type === 'transition' && selected.clip === seg.to) el.classList.add('selected');
-        el.addEventListener('click', (ev) => { ev.stopPropagation(); selectTransition(trackKey, seg.to); });
-        body.appendChild(el);
-        x += w;
+        // 重なっている区間(前クリップの終わり〜次クリップの始まり)そのものをトランジション表示にする
+        const ow = Math.max((prevW.end - w.start) * pxPerFrame, 10);
+        const marker = document.createElement('div');
+        marker.className = 'trans-block';
+        marker.style.left = (w.start * pxPerFrame) + 'px';
+        marker.style.width = ow + 'px';
+        const labelMap = { push:'PUSH ' + w.transitionIn.direction[0].toUpperCase(), splitV:'SPLIT V', splitH:'SPLIT H' };
+        marker.textContent = labelMap[w.transitionIn.type] || 'DIS';
+        if (selected && selected.type === 'transition' && selected.clip === w.clip) marker.classList.add('selected');
+        marker.addEventListener('click', (ev) => { ev.stopPropagation(); selectTransition(trackKey, w.clip); });
+        body.appendChild(marker);
       }
     }
   });
-  body.style.minWidth = x + 'px';
+
+  const totalX = windows.length ? windows[windows.length - 1].end * pxPerFrame : 0;
+  body.style.minWidth = totalX + 'px';
   syncBodyWidths();
 }
 
@@ -505,15 +578,12 @@ let dragging = null; // { trackKey, clip, startX, baseLeft }
 let dragMoved = false;
 
 function computeClipCenters(trackKey){
-  const segs = buildSegments(trackKey);
-  let x = 0;
-  const out = [];
-  segs.forEach(seg => {
-    const w = seg.duration * pxPerFrame;
-    if (seg.type === 'clip') out.push({ clip: seg.clip, x, w, center: x + w/2 });
-    x += w;
-  });
-  return out;
+  return computeClipWindows(trackKey).map(w => ({
+    clip: w.clip,
+    x: w.start * pxPerFrame,
+    w: (w.end - w.start) * pxPerFrame,
+    center: (w.start + (w.end - w.start) / 2) * pxPerFrame
+  }));
 }
 
 function startDrag(ev, trackKey, clip, el){
@@ -761,9 +831,10 @@ function renderInspector(){
     typeRow.className = 'insp-row';
     typeRow.innerHTML = '<span>TYPE</span>';
     const typeSel = document.createElement('select');
-    ['cut','dissolve','push'].forEach(t => {
+    const typeLabels = { cut:'CUT', dissolve:'DISSOLVE', push:'PUSH', splitV:'SPLIT(上下)', splitH:'SPLIT(左右)' };
+    ['cut','dissolve','push','splitV','splitH'].forEach(t => {
       const opt = document.createElement('option');
-      opt.value = t; opt.textContent = t.toUpperCase();
+      opt.value = t; opt.textContent = typeLabels[t];
       if (clip.transitionIn.type === t) opt.selected = true;
       typeSel.appendChild(opt);
     });
@@ -901,44 +972,79 @@ function drawClipState(targetCtx, img, state, offsetX, offsetY){
   targetCtx.drawImage(img, dx, dy, dw, dh);
 }
 function renderTrack(targetCtx, trackKey, frame){
-  const segs = buildSegments(trackKey);
-  let f = frame;
-  for (const seg of segs){
-    if (f < Math.max(seg.duration,0) || (seg.type==='transition' && seg.duration===0 && f===0)){
-      if (seg.type === 'clip'){
-        const t = seg.duration <= 1 ? 1 : f / (seg.duration - 1);
-        const state = kfInterp(seg.clip.kf, Math.min(1, Math.max(0, t)));
-        drawClipState(targetCtx, seg.clip.img, state);
-      } else if (seg.duration > 0) {
-        const p = seg.duration <= 1 ? 1 : f / (seg.duration - 1);
-        const pc = Math.min(1, Math.max(0, p));
-        const fromState = kfInterp(seg.from.kf, 1);
-        const toState = kfInterp(seg.to.kf, 0);
-        if (seg.transition.type === 'dissolve'){
-          targetCtx.globalAlpha = 1 - pc; drawClipState(targetCtx, seg.from.img, fromState);
-          targetCtx.globalAlpha = pc; drawClipState(targetCtx, seg.to.img, toState);
-          targetCtx.globalAlpha = 1;
-        } else if (seg.transition.type === 'push'){
-          const cw = canvas.width, ch = canvas.height;
-          let fromOX=0, fromOY=0, toOX=0, toOY=0;
-          const dir = seg.transition.direction;
-          if (dir === 'left'){ fromOX=-pc*cw; toOX=cw*(1-pc); }
-          else if (dir === 'right'){ fromOX=pc*cw; toOX=-cw*(1-pc); }
-          else if (dir === 'up'){ fromOY=-pc*ch; toOY=ch*(1-pc); }
-          else if (dir === 'down'){ fromOY=pc*ch; toOY=-ch*(1-pc); }
-          drawClipState(targetCtx, seg.from.img, fromState, fromOX, fromOY);
-          drawClipState(targetCtx, seg.to.img, toState, toOX, toOY);
-        }
-      }
-      return;
-    }
-    f -= seg.duration;
+  const windows = computeClipWindows(trackKey);
+  if (!windows.length) return;
+  const active = windows.filter(w => frame >= w.start && frame < w.end);
+
+  if (active.length === 0){
+    const last = windows[windows.length - 1];
+    drawClipState(targetCtx, last.clip.img, kfInterp(last.clip.kf, 1));
+    return;
   }
-  if (segs.length){
-    const last = segs[segs.length - 1];
-    const clip = last.type === 'clip' ? last.clip : last.to;
-    if (clip) drawClipState(targetCtx, clip.img, kfInterp(clip.kf, 1));
+  if (active.length === 1){
+    const w = active[0];
+    const len = w.end - w.start;
+    const t = len <= 1 ? 1 : (frame - w.start) / (len - 1);
+    const state = kfInterp(w.clip.kf, Math.min(1, Math.max(0, t)));
+    drawClipState(targetCtx, w.clip.img, state);
+    return;
   }
+
+  // 重なっている区間: 前後どちらのクリップも自分のズームを継続したまま、重なり部分だけブレンドする
+  const prevW = active[0], nextW = active[1];
+  const prevLen = prevW.end - prevW.start;
+  const nextLen = nextW.end - nextW.start;
+  const prevT = prevLen <= 1 ? 1 : (frame - prevW.start) / (prevLen - 1);
+  const nextT = nextLen <= 1 ? 1 : (frame - nextW.start) / (nextLen - 1);
+  const prevState = kfInterp(prevW.clip.kf, Math.min(1, Math.max(0, prevT)));
+  const nextState = kfInterp(nextW.clip.kf, Math.min(1, Math.max(0, nextT)));
+
+  const overlapLen = prevW.end - nextW.start;
+  const p = overlapLen <= 1 ? 1 : (frame - nextW.start) / (overlapLen - 1);
+  const pc = Math.min(1, Math.max(0, p));
+  const transition = nextW.transitionIn;
+
+  if (transition.type === 'dissolve'){
+    targetCtx.globalAlpha = 1 - pc; drawClipState(targetCtx, prevW.clip.img, prevState);
+    targetCtx.globalAlpha = pc; drawClipState(targetCtx, nextW.clip.img, nextState);
+    targetCtx.globalAlpha = 1;
+  } else if (transition.type === 'push'){
+    const cw = canvas.width, ch = canvas.height;
+    let fromOX=0, fromOY=0, toOX=0, toOY=0;
+    const dir = transition.direction;
+    if (dir === 'left'){ fromOX=-pc*cw; toOX=cw*(1-pc); }
+    else if (dir === 'right'){ fromOX=pc*cw; toOX=-cw*(1-pc); }
+    else if (dir === 'up'){ fromOY=-pc*ch; toOY=ch*(1-pc); }
+    else if (dir === 'down'){ fromOY=pc*ch; toOY=-ch*(1-pc); }
+    drawClipState(targetCtx, prevW.clip.img, prevState, fromOX, fromOY);
+    drawClipState(targetCtx, nextW.clip.img, nextState, toOX, toOY);
+  } else if (transition.type === 'splitV'){
+    // 画面中央から上下に割れて、前クリップが上下に分かれて抜けていく
+    const cw = canvas.width, ch = canvas.height, halfH = ch / 2;
+    drawClipState(targetCtx, nextW.clip.img, nextState);
+    drawClipClipped(targetCtx, prevW.clip.img, prevState, {x:0, y:0, w:cw, h:halfH}, 0, -pc*halfH);
+    drawClipClipped(targetCtx, prevW.clip.img, prevState, {x:0, y:halfH, w:cw, h:halfH}, 0, pc*halfH);
+  } else if (transition.type === 'splitH'){
+    // 画面中央から左右に割れて、前クリップが左右に分かれて抜けていく
+    const cw = canvas.width, ch = canvas.height, halfW = cw / 2;
+    drawClipState(targetCtx, nextW.clip.img, nextState);
+    drawClipClipped(targetCtx, prevW.clip.img, prevState, {x:0, y:0, w:halfW, h:ch}, -pc*halfW, 0);
+    drawClipClipped(targetCtx, prevW.clip.img, prevState, {x:halfW, y:0, w:halfW, h:ch}, pc*halfW, 0);
+  } else {
+    // cut(理論上ここには来ないが保険で次クリップを表示)
+    drawClipState(targetCtx, nextW.clip.img, nextState);
+  }
+}
+function drawClipClipped(targetCtx, img, state, clipRect, offsetX, offsetY){
+  targetCtx.save();
+  // クリップ窓と画像を同時に平行移動させることで、パネルの中身を保ったまま
+  // そのままスライドして画面外へ抜けていく見た目にする(窓だけ/画像だけを動かすと中身がずれてしまう)
+  targetCtx.translate(offsetX, offsetY);
+  targetCtx.beginPath();
+  targetCtx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h);
+  targetCtx.clip();
+  drawClipState(targetCtx, img, state, 0, 0);
+  targetCtx.restore();
 }
 function renderFrame(){
   ctx.fillStyle = '#000';
