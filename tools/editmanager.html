@@ -264,6 +264,7 @@
 </header>
 
 <div class="transport" style="max-width:820px; margin:0 auto 18px;">
+  <button id="undoTopBtn">↺ 元に戻す(Ctrl+Z)</button>
   <button id="saveProjectBtn">💾 プロジェクト保存</button>
   <label class="loader" id="loadProjectBtn" style="display:inline-block; padding:8px 16px; border-radius:20px;">📂 プロジェクトを開く</label>
   <input type="file" id="loadProjectInput" accept=".json">
@@ -319,6 +320,7 @@
     <div class="playhead" id="playhead"></div>
   </div>
 </div>
+
 
 <div class="inspector" id="inspector">
   <div class="empty">クリップやトランジションをクリックすると、ここで詳細を編集できます。</div>
@@ -390,13 +392,67 @@ let tracks = {
   A: { clips: [] },
   B: { clips: [] }
 };
-
 function defaultKf(){
   return { startScale:100, startX:50, startY:50, endScale:112, endX:50, endY:50 };
 }
 function defaultTransition(){
   return { type:'cut', frames:15, direction:'left' };
 }
+// ---------- UNDO(Ctrl+Z) ----------
+let undoStack = [];
+const UNDO_LIMIT = 50;
+function snapshotState(){
+  return JSON.stringify({
+    tracks: {
+      A: tracks.A.clips.map(c => ({ name:c.name, url:c.url, durationFrames:c.durationFrames, transitionIn:c.transitionIn, kf:c.kf })),
+      B: tracks.B.clips.map(c => ({ name:c.name, url:c.url, durationFrames:c.durationFrames, transitionIn:c.transitionIn, kf:c.kf }))
+    }
+  });
+}
+function pushUndo(){
+  undoStack.push(snapshotState());
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+}
+function restoreSnapshot(snapStr){
+  const snap = JSON.parse(snapStr);
+  ['A','B'].forEach(k => {
+    tracks[k].clips = snap.tracks[k].map(c => {
+      const img = new Image();
+      img.src = c.url;
+      return { name:c.name, img, url:c.url, durationFrames:c.durationFrames, transitionIn:c.transitionIn, kf:c.kf };
+    });
+  });
+  selected = null;
+  renderTimelineTrack('A'); renderTimelineTrack('B');
+  renderInspector(); updateSeekRange(); renderRuler(); renderFrame();
+}
+function undo(){
+  if (undoStack.length === 0) return;
+  const snap = undoStack.pop();
+  restoreSnapshot(snap);
+  statusTag.textContent = '元に戻しました';
+}
+document.getElementById('undoTopBtn').addEventListener('click', undo);
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement ? document.activeElement.tagName : '';
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
+    if (tag === 'TEXTAREA') return; // テキスト入力中はブラウザ標準のUndoに任せる
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT'){
+    if (selected && selected.type === 'clip'){
+      pushUndo();
+      const arr = tracks[selected.trackKey].clips;
+      const idx = arr.indexOf(selected.clip);
+      if (idx >= 0) arr.splice(idx, 1);
+      selected = null;
+      renderTimelineTrack('A'); renderTimelineTrack('B');
+      updateSeekRange(); renderRuler(); renderInspector();
+    }
+  }
+});
 
 // ---------- 読み込み ----------
 document.getElementById('loaderAudio').addEventListener('click', () => document.getElementById('audioInput').click());
@@ -432,6 +488,7 @@ function setupTrackLoader(trackKey, inputId, loaderId){
 }
 
 function addImageFile(trackKey, f, presetClip){
+  pushUndo();
   // 先に枠(プレースホルダー)を確保しておき、非同期読み込みが前後しても選択順を保つ
   const clip = presetClip || {
     name: f.name, img: new Image(), url: null,
@@ -603,6 +660,7 @@ document.addEventListener('mousemove', (e) => {
   const snapLine = body.querySelector('.snap-line');
   if (!el) return;
   const dx = e.clientX - dragging.startX;
+  if (Math.abs(dx) > 3 && !dragMoved) pushUndo(); // 実際に動かした最初の瞬間だけ記録
   if (Math.abs(dx) > 3) dragMoved = true;
   const newLeft = dragging.baseLeft + dx;
   el.style.left = newLeft + 'px';
@@ -660,6 +718,7 @@ let resizing = null; // { trackKey, clip, startX, startDuration }
 function startResize(ev, trackKey, clip){
   if (ev.button !== 0) return;
   ev.preventDefault();
+  pushUndo();
   resizing = { trackKey, clip, startX: ev.clientX, startDuration: clip.durationFrames };
 }
 document.addEventListener('mousemove', (e) => {
@@ -804,6 +863,7 @@ function renderInspector(){
     delBtn.className = 'small danger';
     delBtn.textContent = '✕ このクリップを削除';
     delBtn.addEventListener('click', () => {
+      pushUndo();
       const arr = tracks[selected.trackKey].clips;
       const idx = arr.indexOf(clip);
       if (idx >= 0) arr.splice(idx, 1);
@@ -839,6 +899,7 @@ function renderInspector(){
       typeSel.appendChild(opt);
     });
     typeSel.addEventListener('change', () => {
+      pushUndo();
       clip.transitionIn.type = typeSel.value;
       renderTimelineTrack(selected.trackKey); updateSeekRange(); renderRuler(); renderInspector();
     });
@@ -1052,6 +1113,7 @@ function renderFrame(){
   renderTrack(ctx, 'A', Math.round(currentFrame));
   renderTrack(ctx, 'B', Math.round(currentFrame));
 }
+
 function updatePlayheadPos(){
   playhead.style.left = (120 + currentFrame * pxPerFrame - timelineScroll.scrollLeft) + 'px';
 }
